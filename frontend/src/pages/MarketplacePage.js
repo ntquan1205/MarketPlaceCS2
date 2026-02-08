@@ -13,7 +13,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Chip,
+  Paper,
   Avatar
 } from '@mui/material';
 import api from '../services/api';
@@ -25,6 +25,7 @@ function MarketplacePage() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [buyDialogOpen, setBuyDialogOpen] = useState(false);
   const [balance, setBalance] = useState(0);
+  const [buying, setBuying] = useState(false);
 
   useEffect(() => {
     fetchMarketplace();
@@ -46,7 +47,7 @@ function MarketplacePage() {
   const fetchBalance = async () => {
     try {
       const response = await api.get('/auth/profile/');
-      setBalance(response.data.balance);
+      setBalance(parseFloat(response.data.balance));
     } catch (err) {
       console.error('Failed to load balance:', err);
     }
@@ -59,7 +60,8 @@ function MarketplacePage() {
 
   const handleBuyConfirm = async () => {
     if (!selectedItem) return;
-
+    
+    setBuying(true);
     try {
       await api.post(`/marketplace/buy/${selectedItem.id}/`);
       alert('Purchase successful!');
@@ -69,8 +71,12 @@ function MarketplacePage() {
       fetchBalance();
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to buy item');
+    } finally {
+      setBuying(false);
     }
   };
+
+  const canAfford = selectedItem && balance >= parseFloat(selectedItem.price);
 
   if (loading) {
     return (
@@ -86,7 +92,11 @@ function MarketplacePage() {
         <Typography variant="h4">
           Marketplace
         </Typography>
-
+        <Paper sx={{ p: 2, bgcolor: 'primary.light', color: 'white' }}>
+          <Typography variant="h6">
+            Your Balance: ${balance.toFixed(2)}
+          </Typography>
+        </Paper>
       </Box>
 
       <Typography variant="h6" sx={{ mb: 3 }}>
@@ -99,7 +109,13 @@ function MarketplacePage() {
         </Alert>
       )}
 
-
+      {items.length === 0 ? (
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="body1">
+            No skins available for sale. List your own skins to sell!
+          </Typography>
+        </Paper>
+      ) : (
         <Grid container spacing={3}>
           {items.map((item) => (
             <Grid item xs={12} sm={6} md={4} key={item.id}>
@@ -122,7 +138,7 @@ function MarketplacePage() {
                   </Typography>
                   
                   <Box sx={{ display: 'flex', alignItems: 'center', mt: 1, mb: 2 }}>
-                    <Avatar sx={{ width: 24, height: 24, mr: 1 }}>
+                    <Avatar sx={{ width: 24, height: 24, mr: 1, bgcolor: 'secondary.main' }}>
                       {item.seller.charAt(0).toUpperCase()}
                     </Avatar>
                     <Typography variant="body2">
@@ -131,25 +147,25 @@ function MarketplacePage() {
                   </Box>
                   
                   <Typography variant="h5" color="primary" sx={{ mb: 2 }}>
-                    ${item.price}
+                    ${parseFloat(item.price).toFixed(2)}
                   </Typography>
                   
                   <Button
                     variant="contained"
                     fullWidth
                     onClick={() => handleBuyClick(item)}
+                    disabled={balance < parseFloat(item.price)}
                   >
-                    Buy Now
+                    {balance < parseFloat(item.price) ? 'Cannot Afford' : 'Buy Now'}
                   </Button>
                 </CardContent>
               </Card>
             </Grid>
           ))}
         </Grid>
-      )
+      )}
 
-      {/* Buy Confirmation Dialog */}
-      <Dialog open={buyDialogOpen} onClose={() => setBuyDialogOpen(false)}>
+      <Dialog open={buyDialogOpen} onClose={() => !buying && setBuyDialogOpen(false)}>
         <DialogTitle>Confirm Purchase</DialogTitle>
         <DialogContent>
           {selectedItem && (
@@ -161,27 +177,29 @@ function MarketplacePage() {
                 {selectedItem.skin.weapon} | {selectedItem.skin.quality}
               </Typography>
               <Typography variant="h6" sx={{ mt: 2 }}>
-                Price: ${selectedItem.price}
+                Price: ${parseFloat(selectedItem.price).toFixed(2)}
               </Typography>
               <Typography variant="body2" sx={{ mt: 1 }}>
-                Your balance: ${balance}
+                Your balance: ${balance.toFixed(2)}
               </Typography>
-              {balance < selectedItem.price && (
+              {!canAfford && (
                 <Alert severity="error" sx={{ mt: 2 }}>
-                  Insufficient balance!
+                  Insufficient balance! You need ${(parseFloat(selectedItem.price) - balance).toFixed(2)} more.
                 </Alert>
               )}
             </>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setBuyDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => setBuyDialogOpen(false)} disabled={buying}>
+            Cancel
+          </Button>
           <Button
             onClick={handleBuyConfirm}
             variant="contained"
-            disabled={selectedItem && balance < selectedItem.price}
+            disabled={!canAfford || buying}
           >
-            Confirm Purchase
+            {buying ? <CircularProgress size={24} /> : 'Confirm Purchase'}
           </Button>
         </DialogActions>
       </Dialog>

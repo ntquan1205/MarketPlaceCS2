@@ -34,7 +34,7 @@ class Skin(models.Model):
     name = models.CharField(max_length=200)
     weapon = models.CharField(max_length=100)
     quality = models.CharField(max_length=50, choices=QUALITY_CHOICES)
-    base_price = models.DecimalField(max_digits=10, decimal_places=2)  # Базовая цена
+    base_price = models.DecimalField(max_digits=10, decimal_places=2)  
     min_sell_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     max_sell_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     image_url = models.URLField(blank=True)
@@ -79,7 +79,7 @@ class Inventory(models.Model):
     added_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
-        unique_together = ['user', 'skin']  # Один скин у одного пользователя
+        unique_together = ['user', 'skin']  
     
     def __str__(self):
         status = "FOR SALE" if self.is_for_sale else "NOT FOR SALE"

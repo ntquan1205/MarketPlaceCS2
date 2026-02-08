@@ -39,7 +39,6 @@ class SkinViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def buy(self, request, pk=None):
-        """Купить скин"""
         skin = self.get_object()
         user = request.user
         
@@ -51,38 +50,37 @@ class SkinViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Получаем текущую рыночную цену
         current_price = skin.get_market_price()
         
-        # Проверяем баланс
-        if user_profile.balance < current_price:
-            return Response(
-                {'error': 'Insufficient balance'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        from decimal import Decimal
+        if user_profile.balance < Decimal(str(current_price)):
+            return Response({
+                'error': f'Insufficient balance. You have ${user_profile.balance}, need ${current_price}'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         with db_transaction.atomic():
-            # Снимаем деньги
-            user_profile.balance -= current_price
+            user_profile.balance -= Decimal(str(current_price))
             user_profile.save()
             
-            # Добавляем скин в инвентарь
-            inventory_item, created = Inventory.objects.get_or_create(
-                user=user,
-                skin=skin,
-                defaults={'is_for_sale': False}
-            )
+            existing_inventory = Inventory.objects.filter(user=user, skin=skin).first()
             
-            # Если скин уже есть в инвентаре, просто увеличиваем количество?
-            # Пока оставим так - нельзя купить тот же скин если уже есть
-            
-            # Создаем запись о транзакции
+            if existing_inventory:
+                return Response({
+                    'error': f'You already have {skin.name} in your inventory'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                Inventory.objects.create(
+                    user=user,
+                    skin=skin,
+                    is_for_sale=False
+                )
+
             Transaction.objects.create(
                 user=user,
                 skin=skin,
                 transaction_type='buy',
                 amount=current_price,
-                description=f'Purchased {skin.name}'
+                description=f'Purchased {skin.name} from market'
             )
         
         return Response({
@@ -91,7 +89,6 @@ class SkinViewSet(viewsets.ModelViewSet):
             'new_balance': float(user_profile.balance),
             'skin': SkinSerializer(skin).data
         })
-
 class InventoryViewSet(viewsets.ModelViewSet):
     serializer_class = InventorySerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -197,22 +194,16 @@ class InventoryViewSet(viewsets.ModelViewSet):
     
 
 class MarketplaceViewSet(viewsets.ViewSet):
-    """ViewSet для маркетплейса - скины на продаже от всех пользователей"""
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     
     def list(self, request):
-        """Все скины выставленные на продажу"""
-        # Получаем все скины на продаже
         items_for_sale = Inventory.objects.filter(is_for_sale=True)
-        
-        # Исключаем скины текущего пользователя (чтобы не покупать у себя)
+
         if request.user.is_authenticated:
             items_for_sale = items_for_sale.exclude(user=request.user)
-        
-        # Сериализуем данные
+
         serializer = InventorySerializer(items_for_sale, many=True)
         
-        # Форматируем ответ
         data = []
         for item in serializer.data:
             data.append({
@@ -227,7 +218,6 @@ class MarketplaceViewSet(viewsets.ViewSet):
     
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def buy(self, request, pk=None):
-        """Купить скин с маркетплейса"""
         try:
             item_for_sale = Inventory.objects.get(id=pk, is_for_sale=True)
         except Inventory.DoesNotExist:
@@ -236,7 +226,6 @@ class MarketplaceViewSet(viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Нельзя купить у себя
         if item_for_sale.user == request.user:
             return Response(
                 {'error': 'Cannot buy your own item'}, 
@@ -256,42 +245,32 @@ class MarketplaceViewSet(viewsets.ViewSet):
                 {'error': 'User profile not found'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # Проверяем баланс покупателя
-        if buyer_profile.balance < price:
-            return Response(
-                {'error': 'Insufficient balance'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+
+        from decimal import Decimal
+        if buyer_profile.balance < Decimal(str(price)):
+            return Response({
+                'error': f'Insufficient balance. You have ${buyer_profile.balance}, need ${price}'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         with db_transaction.atomic():
-            # Переводим деньги
-            buyer_profile.balance -= price
-            seller_profile.balance += price
+            buyer_profile.balance -= Decimal(str(price))
+            seller_profile.balance += Decimal(str(price))
             buyer_profile.save()
             seller_profile.save()
             
-            # Передаем скин покупателю
-            # Сначала проверяем нет ли уже такого скина у покупателя
-            buyer_inventory, created = Inventory.objects.get_or_create(
-                user=buyer,
-                skin=skin,
-                defaults={
-                    'is_for_sale': False,
-                    'sale_price': None
-                }
-            )
+            buyer_has_skin = Inventory.objects.filter(user=buyer, skin=skin).exists()
             
-            # Если у покупателя уже есть такой скин, просто удаляем у продавца
-            # (или можно увеличивать количество - но у нас уникальность)
-            if not created:
-                # У покупателя уже есть такой скин
-                pass
+            if not buyer_has_skin:
+
+                Inventory.objects.create(
+                    user=buyer,
+                    skin=skin,
+                    is_for_sale=False,
+                    sale_price=None
+                )
             
-            # Удаляем скин у продавца
             item_for_sale.delete()
             
-            # Создаем транзакции для обоих пользователей
             Transaction.objects.create(
                 user=buyer,
                 skin=skin,
@@ -307,6 +286,8 @@ class MarketplaceViewSet(viewsets.ViewSet):
                 amount=price,
                 description=f'Sold {skin.name} to {buyer.username}'
             )
+        
+        buyer_profile.refresh_from_db()
         
         return Response({
             'success': True,
@@ -332,7 +313,6 @@ class TransactionViewSet(viewsets.ReadOnlyModelViewSet):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def buy_skin(request, skin_id):
-    """Endpoint для покупки скина"""
     try:
         skin = Skin.objects.get(id=skin_id)
     except Skin.DoesNotExist:
@@ -348,7 +328,6 @@ def buy_skin(request, skin_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def sell_skin(request, inventory_id):
-    """Endpoint для продажи скина из инвентаря"""
     try:
         inventory_item = Inventory.objects.get(id=inventory_id)
     except Inventory.DoesNotExist:
