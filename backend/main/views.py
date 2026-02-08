@@ -99,104 +99,222 @@ class InventoryViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Inventory.objects.filter(user=self.request.user)
     
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
-    
     @action(detail=True, methods=['post'])
     def sell(self, request, pk=None):
-        """Продать скин из инвентаря"""
+        """Выставить скин на продажу"""
         inventory_item = self.get_object()
         
-        # Проверяем что это инвентарь текущего пользователя
         if inventory_item.user != request.user:
             return Response(
                 {'error': 'Not your inventory item'}, 
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # Проверяем что скин не выставлен на продажу
         if inventory_item.is_for_sale:
             return Response(
                 {'error': 'Skin is already for sale'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        skin = inventory_item.skin
-        user = request.user
+        # Получаем цену из запроса или используем рыночную
+        sale_price = request.data.get('price')
+        if sale_price:
+            sale_price = float(sale_price)
+            skin = inventory_item.skin
+            # Проверяем что цена в допустимом диапазоне
+            if sale_price < float(skin.min_sell_price) or sale_price > float(skin.max_sell_price):
+                return Response({
+                    'error': f'Price must be between ${skin.min_sell_price} and ${skin.max_sell_price}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            # Используем рыночную цену
+            sale_price = inventory_item.skin.get_market_price()
+        
+        # Выставляем на продажу (НЕ удаляем из инвентаря!)
+        inventory_item.is_for_sale = True
+        inventory_item.sale_price = sale_price
+        inventory_item.save()
+        
+        # Создаем запись о транзакции
+        Transaction.objects.create(
+            user=request.user,
+            skin=inventory_item.skin,
+            transaction_type='list_for_sale',
+            amount=sale_price,
+            description=f'Listed {inventory_item.skin.name} for sale'
+        )
+        
+        return Response({
+            'success': True,
+            'message': f'{inventory_item.skin.name} listed for sale at ${sale_price}',
+            'inventory_item': InventorySerializer(inventory_item).data
+        })
+    
+    
+    @action(detail=True, methods=['post'])
+    def cancel_sale(self, request, pk=None):
+        inventory_item = self.get_object()
+        
+        if inventory_item.user != request.user:
+            return Response(
+                {'error': 'Not your inventory item'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        if not inventory_item.is_for_sale:
+            return Response(
+                {'error': 'Skin is not for sale'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Снимаем с продажи
+        inventory_item.is_for_sale = False
+        inventory_item.sale_price = None
+        inventory_item.save()
+        
+        # Создаем запись о транзакции
+        Transaction.objects.create(
+            user=request.user,
+            skin=inventory_item.skin,
+            transaction_type='cancel_sale',
+            amount=0,
+            description=f'Cancelled sale of {inventory_item.skin.name}'
+        )
+        
+        return Response({
+            'success': True,
+            'message': f'{inventory_item.skin.name} removed from marketplace'
+        })
+    
+    
+    @action(detail=False)
+    def for_sale(self, request):
+        """Получить скины текущего пользователя выставленные на продажу"""
+        queryset = self.get_queryset().filter(is_for_sale=True)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+    
+    
+
+class MarketplaceViewSet(viewsets.ViewSet):
+    """ViewSet для маркетплейса - скины на продаже от всех пользователей"""
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    
+    def list(self, request):
+        """Все скины выставленные на продажу"""
+        # Получаем все скины на продаже
+        items_for_sale = Inventory.objects.filter(is_for_sale=True)
+        
+        # Исключаем скины текущего пользователя (чтобы не покупать у себя)
+        if request.user.is_authenticated:
+            items_for_sale = items_for_sale.exclude(user=request.user)
+        
+        # Сериализуем данные
+        serializer = InventorySerializer(items_for_sale, many=True)
+        
+        # Форматируем ответ
+        data = []
+        for item in serializer.data:
+            data.append({
+                'id': item['id'],
+                'seller': item['user']['username'],
+                'skin': item['skin'],
+                'price': item['sale_price'],
+                'listed_at': item['added_at']
+            })
+        
+        return Response(data)
+    
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def buy(self, request, pk=None):
+        """Купить скин с маркетплейса"""
+        try:
+            item_for_sale = Inventory.objects.get(id=pk, is_for_sale=True)
+        except Inventory.DoesNotExist:
+            return Response(
+                {'error': 'Item not found or not for sale'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Нельзя купить у себя
+        if item_for_sale.user == request.user:
+            return Response(
+                {'error': 'Cannot buy your own item'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        buyer = request.user
+        seller = item_for_sale.user
+        skin = item_for_sale.skin
+        price = item_for_sale.sale_price
         
         try:
-            user_profile = UserProfile.objects.get(user=user)
+            buyer_profile = UserProfile.objects.get(user=buyer)
+            seller_profile = UserProfile.objects.get(user=seller)
         except UserProfile.DoesNotExist:
             return Response(
                 {'error': 'User profile not found'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Получаем цену продажи (можно передать в запросе или использовать рыночную)
-        sell_price = request.data.get('price')
-        if sell_price:
-            sell_price = float(sell_price)
-            # Проверяем что цена в допустимом диапазоне
-            if sell_price < float(skin.min_sell_price) or sell_price > float(skin.max_sell_price):
-                return Response({
-                    'error': f'Price must be between ${skin.min_sell_price} and ${skin.max_sell_price}'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            # Используем рыночную цену
-            sell_price = skin.get_market_price()
+        # Проверяем баланс покупателя
+        if buyer_profile.balance < price:
+            return Response(
+                {'error': 'Insufficient balance'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         with db_transaction.atomic():
-            # Добавляем деньги
-            user_profile.balance += sell_price
-            user_profile.save()
+            # Переводим деньги
+            buyer_profile.balance -= price
+            seller_profile.balance += price
+            buyer_profile.save()
+            seller_profile.save()
             
-            # Помечаем как проданное или удаляем из инвентаря
-            # Вариант 1: Удаляем из инвентаря
-            inventory_item.delete()
-
+            # Передаем скин покупателю
+            # Сначала проверяем нет ли уже такого скина у покупателя
+            buyer_inventory, created = Inventory.objects.get_or_create(
+                user=buyer,
+                skin=skin,
+                defaults={
+                    'is_for_sale': False,
+                    'sale_price': None
+                }
+            )
+            
+            # Если у покупателя уже есть такой скин, просто удаляем у продавца
+            # (или можно увеличивать количество - но у нас уникальность)
+            if not created:
+                # У покупателя уже есть такой скин
+                pass
+            
+            # Удаляем скин у продавца
+            item_for_sale.delete()
+            
+            # Создаем транзакции для обоих пользователей
             Transaction.objects.create(
-                user=user,
+                user=buyer,
+                skin=skin,
+                transaction_type='buy',
+                amount=price,
+                description=f'Bought {skin.name} from {seller.username}'
+            )
+            
+            Transaction.objects.create(
+                user=seller,
                 skin=skin,
                 transaction_type='sell',
-                amount=sell_price,
-                description=f'Sold {skin.name}'
+                amount=price,
+                description=f'Sold {skin.name} to {buyer.username}'
             )
         
         return Response({
             'success': True,
-            'message': f'Successfully sold {skin.name} for ${sell_price}',
-            'new_balance': float(user_profile.balance),
+            'message': f'Successfully purchased {skin.name} for ${price}',
+            'new_balance': float(buyer_profile.balance),
             'skin': SkinSerializer(skin).data
         })
-    
-    @action(detail=False)
-    def for_sale(self, request):
-        """Получить скины выставленные на продажу"""
-        queryset = self.get_queryset().filter(is_for_sale=True)
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
-
-class MarketplaceViewSet(viewsets.ViewSet):
-    """Отдельный ViewSet для маркетплейса"""
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    
-    def list(self, request):
-        """Все скины доступные для покупки"""
-        skins = Skin.objects.all()
-        serializer = SkinSerializer(skins, many=True)
-        
-        # Добавляем текущую рыночную цену для каждого скина
-        data = serializer.data
-        for item in data:
-            skin = Skin.objects.get(id=item['id'])
-            item['current_price'] = skin.get_market_price()
-            item['price_range'] = {
-                'min': float(skin.min_sell_price),
-                'max': float(skin.max_sell_price)
-            }
-        
-        return Response(data)
-
+            
 class UserProfileViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = UserProfileSerializer
     permission_classes = [permissions.IsAuthenticated]

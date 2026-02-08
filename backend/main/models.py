@@ -77,12 +77,13 @@ class Inventory(models.Model):
     is_for_sale = models.BooleanField(default=False)
     sale_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     added_at = models.DateTimeField(auto_now_add=True)
-
+    
     class Meta:
-        unique_together = ['user', 'skin']
-
+        unique_together = ['user', 'skin']  # Один скин у одного пользователя
+    
     def __str__(self):
-        return f"{self.user.username} - {self.skin.name}"
+        status = "FOR SALE" if self.is_for_sale else "NOT FOR SALE"
+        return f"{self.user.username} - {self.skin.name} ({status})"
 
 
 class Transaction(models.Model):

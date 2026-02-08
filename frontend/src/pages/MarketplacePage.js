@@ -12,29 +12,31 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Chip,
+  Avatar
 } from '@mui/material';
 import api from '../services/api';
 
 function MarketplacePage() {
-  const [skins, setSkins] = useState([]);
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedSkin, setSelectedSkin] = useState(null);
+  const [selectedItem, setSelectedItem] = useState(null);
   const [buyDialogOpen, setBuyDialogOpen] = useState(false);
   const [balance, setBalance] = useState(0);
 
   useEffect(() => {
-    fetchSkins();
+    fetchMarketplace();
     fetchBalance();
   }, []);
 
-  const fetchSkins = async () => {
+  const fetchMarketplace = async () => {
     try {
-      const response = await api.get('/skins/');
-      setSkins(response.data);
+      const response = await api.get('/marketplace/');
+      setItems(response.data);
     } catch (err) {
-      setError('Failed to load skins');
+      setError('Failed to load marketplace');
       console.error(err);
     } finally {
       setLoading(false);
@@ -50,22 +52,23 @@ function MarketplacePage() {
     }
   };
 
-  const handleBuyClick = (skin) => {
-    setSelectedSkin(skin);
+  const handleBuyClick = (item) => {
+    setSelectedItem(item);
     setBuyDialogOpen(true);
   };
 
   const handleBuyConfirm = async () => {
-    if (!selectedSkin) return;
+    if (!selectedItem) return;
 
     try {
-      await api.post(`/market/buy/${selectedSkin.id}/`);
+      await api.post(`/marketplace/buy/${selectedItem.id}/`);
       alert('Purchase successful!');
       setBuyDialogOpen(false);
-      // Обновляем баланс
+      // Обновляем данные
+      fetchMarketplace();
       fetchBalance();
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to buy skin');
+      alert(err.response?.data?.error || 'Failed to buy item');
     }
   };
 
@@ -83,7 +86,12 @@ function MarketplacePage() {
         <Typography variant="h4">
           Marketplace
         </Typography>
+
       </Box>
+
+      <Typography variant="h6" sx={{ mb: 3 }}>
+        Skins for sale from other players
+      </Typography>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -91,63 +99,74 @@ function MarketplacePage() {
         </Alert>
       )}
 
-      <Grid container spacing={3}>
-        {skins.map((skin) => (
-          <Grid item xs={12} sm={6} md={4} key={skin.id}>
-            <Card>
-              {skin.image_url && (
-                <CardMedia
-                  component="img"
-                  height="140"
-                  image={skin.image_url}
-                  alt={skin.name}
-                  sx={{ objectFit: 'cover' }}
-                />
-              )}
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  {skin.name}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {skin.weapon} | {skin.quality}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Price range: ${skin.min_sell_price} - ${skin.max_sell_price}
-                </Typography>
-                <Typography variant="h5" color="primary" sx={{ mt: 1, mb: 2 }}>
-                  ${skin.base_price}
-                </Typography>
-                <Button
-                  variant="contained"
-                  fullWidth
-                  onClick={() => handleBuyClick(skin)}
-                >
-                  Buy Now
-                </Button>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
 
+        <Grid container spacing={3}>
+          {items.map((item) => (
+            <Grid item xs={12} sm={6} md={4} key={item.id}>
+              <Card>
+                {item.skin.image_url && (
+                  <CardMedia
+                    component="img"
+                    height="140"
+                    image={item.skin.image_url}
+                    alt={item.skin.name}
+                    sx={{ objectFit: 'cover' }}
+                  />
+                )}
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    {item.skin.name}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {item.skin.weapon} | {item.skin.quality}
+                  </Typography>
+                  
+                  <Box sx={{ display: 'flex', alignItems: 'center', mt: 1, mb: 2 }}>
+                    <Avatar sx={{ width: 24, height: 24, mr: 1 }}>
+                      {item.seller.charAt(0).toUpperCase()}
+                    </Avatar>
+                    <Typography variant="body2">
+                      Sold by: {item.seller}
+                    </Typography>
+                  </Box>
+                  
+                  <Typography variant="h5" color="primary" sx={{ mb: 2 }}>
+                    ${item.price}
+                  </Typography>
+                  
+                  <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={() => handleBuyClick(item)}
+                  >
+                    Buy Now
+                  </Button>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      )
+
+      {/* Buy Confirmation Dialog */}
       <Dialog open={buyDialogOpen} onClose={() => setBuyDialogOpen(false)}>
         <DialogTitle>Confirm Purchase</DialogTitle>
         <DialogContent>
-          {selectedSkin && (
+          {selectedItem && (
             <>
               <Typography>
-                Are you sure you want to buy <strong>{selectedSkin.name}</strong>?
+                Buy <strong>{selectedItem.skin.name}</strong> from <strong>{selectedItem.seller}</strong>?
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                {selectedSkin.weapon} | {selectedSkin.quality}
+                {selectedItem.skin.weapon} | {selectedItem.skin.quality}
               </Typography>
               <Typography variant="h6" sx={{ mt: 2 }}>
-                Price: ${selectedSkin.base_price}
+                Price: ${selectedItem.price}
               </Typography>
               <Typography variant="body2" sx={{ mt: 1 }}>
                 Your balance: ${balance}
               </Typography>
-              {balance < selectedSkin.base_price && (
+              {balance < selectedItem.price && (
                 <Alert severity="error" sx={{ mt: 2 }}>
                   Insufficient balance!
                 </Alert>
@@ -160,7 +179,7 @@ function MarketplacePage() {
           <Button
             onClick={handleBuyConfirm}
             variant="contained"
-            disabled={selectedSkin && balance < selectedSkin.base_price}
+            disabled={selectedItem && balance < selectedItem.price}
           >
             Confirm Purchase
           </Button>

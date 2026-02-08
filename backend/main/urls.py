@@ -21,6 +21,6 @@ urlpatterns = [
     
     path('', include(router.urls)),
     
-    path('market/buy/<int:skin_id>/', views.buy_skin, name='buy-skin'),
+    path('marketplace/buy/<int:pk>/', views.MarketplaceViewSet.as_view({'post': 'buy'}), name='marketplace-buy'),
     path('market/sell/<int:inventory_id>/', views.sell_skin, name='sell-skin'),
 ]
