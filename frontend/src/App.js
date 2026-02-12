@@ -16,21 +16,37 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import authService from './services/auth';
+import TransactionsPage from './pages/TransactionsPage';
 
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [balance, setBalance] = useState(0);
 
   useEffect(() => {
-    // Проверяем аутентификацию при загрузке
     const currentUser = authService.getCurrentUser();
     setUser(currentUser);
+    
+    if (currentUser) {
+      fetchBalance();
+    }
+    
     setLoading(false);
   }, []);
+
+  const fetchBalance = async () => {
+    try {
+      const response = await authService.getProfile();
+      setBalance(response.data.balance);
+    } catch (err) {
+      console.error('Failed to load balance:', err);
+    }
+  };
 
   const handleLogout = () => {
     authService.logout();
     setUser(null);
+    setBalance(0);
     window.location.href = '/login';
   };
 
@@ -56,6 +72,7 @@ function App() {
           {user ? (
             <>
               <Button color="inherit" component={Link} to="/inventory">Inventory</Button>
+              <Button color="inherit" component={Link} to="/transactions">Transactions</Button>
               <Typography variant="body2" sx={{ mx: 2 }}>
                 Welcome, {user.username}!
               </Typography>
@@ -81,6 +98,12 @@ function App() {
           <Route path="/inventory" element={
             <ProtectedRoute>
               <InventoryPage />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/transactions" element={
+            <ProtectedRoute>
+              <TransactionsPage />
             </ProtectedRoute>
           } />
           
