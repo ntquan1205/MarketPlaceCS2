@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from .serializers import RegisterSerializer
+from decimal import Decimal
 
 def index(request):
     return JsonResponse({
@@ -419,3 +420,127 @@ class UserProfileView(APIView):
             return Response(serializer.data)
         except UserProfile.DoesNotExist:
             return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+class FinanceViewSet(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @action(detail=False, methods=['post'])
+    def deposit(self, request):
+        amount = request.data.get('amount')
+        
+        if not amount:
+            return Response(
+                {'error': 'Amount is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            amount = Decimal(str(amount))
+        except:
+            return Response(
+                {'error': 'Invalid amount format'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if amount <= 0:
+            return Response(
+                {'error': 'Amount must be positive'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if amount > 1000:
+            return Response(
+                {'error': 'Maximum deposit amount is $1000 per transaction'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        user = request.user
+        
+        with db_transaction.atomic():
+            try:
+                profile = UserProfile.objects.get(user=user)
+            except UserProfile.DoesNotExist:
+                return Response(
+                    {'error': 'User profile not found'}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            profile.balance += amount
+            profile.save()
+
+            Transaction.objects.create(
+                user=user,
+                transaction_type='add_funds',
+                amount=amount,
+                description=f'Deposited ${amount} to balance'
+            )
+        
+        return Response({
+            'success': True,
+            'message': f'Successfully deposited ${amount}',
+            'new_balance': float(profile.balance)
+        })
+    
+    @action(detail=False, methods=['post'])
+    def withdraw(self, request):
+        """Вывод средств"""
+        amount = request.data.get('amount')
+        
+        if not amount:
+            return Response(
+                {'error': 'Amount is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            amount = Decimal(str(amount))
+        except:
+            return Response(
+                {'error': 'Invalid amount format'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if amount <= 0:
+            return Response(
+                {'error': 'Amount must be positive'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if amount > 1000:
+            return Response(
+                {'error': 'Maximum withdrawal amount is $1000 per transaction'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        user = request.user
+        
+        with db_transaction.atomic():
+            try:
+                profile = UserProfile.objects.get(user=user)
+            except UserProfile.DoesNotExist:
+                return Response(
+                    {'error': 'User profile not found'}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            if profile.balance < amount:
+                return Response(
+                    {'error': f'Insufficient balance. You have ${profile.balance}, need ${amount}'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            profile.balance -= amount
+            profile.save()
+            
+            Transaction.objects.create(
+                user=user,
+                transaction_type='withdraw',
+                amount=amount,
+                description=f'Withdrew ${amount} from balance'
+            )
+        
+        return Response({
+            'success': True,
+            'message': f'Successfully withdrew ${amount}',
+            'new_balance': float(profile.balance)
+        })

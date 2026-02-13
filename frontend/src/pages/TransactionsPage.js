@@ -289,15 +289,20 @@ function TransactionsPage() {
                     </Typography>
                   </TableCell>
                   <TableCell align="right">
-                    <Typography 
-                      variant="body1" 
-                      fontWeight="bold"
-                      color={transaction.transaction_type === 'buy' ? 'error' : 'success.main'}
-                    >
-                      {transaction.transaction_type === 'buy' ? '-' : '+'}${parseFloat(transaction.amount).toFixed(2)}
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="right">
+                  <Typography 
+                    variant="body1" 
+                    fontWeight="bold"
+                    color={
+                      transaction.transaction_type === 'buy' || transaction.transaction_type === 'withdraw' 
+                        ? 'error' 
+                        : 'success.main'
+                    }
+                  >
+                    {transaction.transaction_type === 'buy' || transaction.transaction_type === 'withdraw' 
+                      ? '-' 
+                      : '+'}
+                    ${parseFloat(transaction.amount).toFixed(2)}
+                  </Typography>
                     <Typography variant="body2" color="text.secondary">
                       {formatDate(transaction.created_at)}
                     </Typography>

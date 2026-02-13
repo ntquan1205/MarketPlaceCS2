@@ -17,6 +17,7 @@ import RegisterPage from './pages/RegisterPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import authService from './services/auth';
 import TransactionsPage from './pages/TransactionsPage';
+import FinancePage from './pages/FinancePage';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -73,6 +74,7 @@ function App() {
             <>
               <Button color="inherit" component={Link} to="/inventory">Inventory</Button>
               <Button color="inherit" component={Link} to="/transactions">Transactions</Button>
+              <Button color="inherit" component={Link} to="/finance">Finance</Button>
               <Typography variant="body2" sx={{ mx: 2 }}>
                 Welcome, {user.username}!
               </Typography>
@@ -93,8 +95,12 @@ function App() {
           <Route path="/marketplace" element={<MarketplacePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/finance" element={
+            <ProtectedRoute>
+              <FinancePage />
+            </ProtectedRoute>
+          } />
           
-          {/* Protected routes */}
           <Route path="/inventory" element={
             <ProtectedRoute>
               <InventoryPage />

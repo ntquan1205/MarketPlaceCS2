@@ -2,6 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 from rest_framework_simplejwt.views import TokenRefreshView
+from .views import FinanceViewSet
 
 router = DefaultRouter()
 router.register(r'skins', views.SkinViewSet)
@@ -23,4 +24,8 @@ urlpatterns = [
     
     path('marketplace/buy/<int:pk>/', views.MarketplaceViewSet.as_view({'post': 'buy'}), name='marketplace-buy'),
     path('market/sell/<int:inventory_id>/', views.sell_skin, name='sell-skin'),
+    path('finance/deposit/', FinanceViewSet.as_view({'post': 'deposit'}), name='deposit'),
+    path('api/finance/deposit/', FinanceViewSet.as_view({'post': 'deposit'}), name='deposit-api'),
+    path('finance/withdraw/', FinanceViewSet.as_view({'post': 'withdraw'}), name='withdraw'),
+    path('api/finance/withdraw/', FinanceViewSet.as_view({'post': 'withdraw'}), name='withdraw-api'),
 ]
