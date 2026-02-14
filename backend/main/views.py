@@ -16,6 +16,15 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from .serializers import RegisterSerializer
 from decimal import Decimal
+from datetime import datetime
+
+def health_check(request):
+    return JsonResponse({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'service': 'CS2 Marketplace API',
+        'database': 'connected'
+    })
 
 def index(request):
     return JsonResponse({
@@ -544,3 +553,4 @@ class FinanceViewSet(viewsets.ViewSet):
             'message': f'Successfully withdrew ${amount}',
             'new_balance': float(profile.balance)
         })
+        

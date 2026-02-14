@@ -12,6 +12,7 @@ router.register(r'transactions', views.TransactionViewSet, basename='transaction
 router.register(r'marketplace', views.MarketplaceViewSet, basename='marketplace')
 
 urlpatterns = [
+    path('health/', views.health_check, name='health'),
     path('', views.index, name='api-root'),
     
     path('auth/register/', views.RegisterView.as_view(), name='register'),
