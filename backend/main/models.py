@@ -92,6 +92,7 @@ class Transaction(models.Model):
         ('sell', 'Sell'),
         ('trade', 'Trade'),
         ('add_funds', 'Add Funds'),
+        ('withdraw', 'Withdraw'),
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='transactions')
